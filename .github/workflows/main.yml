@@ -83,14 +83,14 @@ jobs:
           auto-activate-base: false
 
       - name: Install dependencies
-        shell: bash -l {0}
+        shell: bash 
         run: |
           conda install -y nuitka markdown pyside6 -c conda-forge
           conda list
 
       - name: Build Windows executable
         if: runner.os == 'Windows'
-        shell: bash -l {0}
+        shell: bash 
         run: |
           python -m nuitka \
             --standalone \
@@ -119,7 +119,7 @@ jobs:
 
       - name: Build macOS app
         if: runner.os == 'macOS'
-        shell: bash -l {0}
+        shell: bash 
         run: |
           python -m nuitka \
             --standalone \
@@ -154,7 +154,7 @@ jobs:
 
       - name: Build Linux binary
         if: runner.os == 'Linux'
-        shell: bash -l {0}
+        shell: bash 
         run: |
           python -m nuitka \
             --standalone \
@@ -181,7 +181,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: $ARTIFACT_DIR
-          pattern: *_${{ needs.setup.outputs.version }}*
+          pattern: $*{{5}}*
           merge-multiple: true
 
       - name: Create Release
