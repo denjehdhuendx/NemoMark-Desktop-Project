@@ -9,6 +9,7 @@ env:
   APP_NAME: NemoMark_Desktop
   BUILD_DIR: dist
   ARTIFACT_DIR: artifacts
+  CONDA_VERSION: "latest"  # 使用最新版Miniconda
 
 jobs:
   setup:
@@ -35,53 +36,61 @@ jobs:
       matrix:
         include:
           # Windows builds
-          - os: windows-latest
+          - os: windows-2025
             arch: x64
             artifact_name: Windows_x64
             ext: exe
-          - os: windows-latest
+            platform: win_amd64
+          - os: windows-2025
             arch: arm64
             artifact_name: Windows_ARM64
             ext: exe
+            platform: win_arm64
           # macOS builds
-          - os: macos-latest
+          - os: macos-15
             arch: x86_64
             artifact_name: macOS_x64
             ext: app
-          - os: macos-latest
+            platform: macosx_x86_64
+          - os: macos-15
             arch: arm64
             artifact_name: macOS_ARM64
             ext: app
+            platform: macosx_arm64
           # Linux builds
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             arch: x86_64
             artifact_name: Linux_x64
             ext: bin
-          - os: ubuntu-latest
+            platform: linux_x86_64
+          - os: ubuntu-24.04
             arch: arm64
             artifact_name: Linux_ARM64
             ext: bin
+            platform: linux_aarch64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Miniconda
+      - name: Set up latest Miniconda
         uses: conda-incubator/setup-miniconda@v2
         with:
+          miniconda-version: "${{ env.CONDA_VERSION }}"
           python-version: "3.11"
           channels: conda-forge,defaults
           activate-environment: nemomark
           auto-update-conda: true
+          auto-activate-base: false
 
       - name: Install dependencies
-        shell: bash 
+        shell: bash -l {0}
         run: |
           conda install -y nuitka markdown pyside6 -c conda-forge
           conda list
 
       - name: Build Windows executable
         if: runner.os == 'Windows'
-        shell: bash 
+        shell: bash -l {0}
         run: |
           python -m nuitka \
             --standalone \
@@ -90,6 +99,7 @@ jobs:
             --output-dir=$BUILD_DIR \
             --windows-product-version=${{ needs.setup.outputs.version }} \
             --windows-file-version=${{ needs.setup.outputs.version }} \
+            --clang \
             ${APP_NAME}.py
 
           # Code signing for Windows
@@ -109,7 +119,7 @@ jobs:
 
       - name: Build macOS app
         if: runner.os == 'macOS'
-        shell: bash 
+        shell: bash -l {0}
         run: |
           python -m nuitka \
             --standalone \
@@ -126,6 +136,17 @@ jobs:
               --sign "Developer ID Application: ${{ secrets.MACOS_DEVELOPER_ID }}" \
               --timestamp \
               "$BUILD_DIR/${APP_NAME}.app"
+            
+            # Notarization (optional)
+            if [[ -n "${{ secrets.MACOS_APPLE_ID }}" ]]; then
+              echo "Notarizing app..."
+              xcrun notarytool submit "$BUILD_DIR/${APP_NAME}.app" \
+                --apple-id "${{ secrets.MACOS_APPLE_ID }}" \
+                --team-id "${{ secrets.MACOS_TEAM_ID }}" \
+                --password "${{ secrets.MACOS_APP_PASSWORD }}" \
+                --wait
+              xcrun stapler staple "$BUILD_DIR/${APP_NAME}.app"
+            fi
           fi
 
           mkdir -p $ARTIFACT_DIR
@@ -133,7 +154,7 @@ jobs:
 
       - name: Build Linux binary
         if: runner.os == 'Linux'
-        shell: bash 
+        shell: bash -l {0}
         run: |
           python -m nuitka \
             --standalone \
@@ -147,9 +168,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
+          name: ${{ matrix.artifact_name }}_${{ needs.setup.outputs.version }}
           path: $ARTIFACT_DIR/*
           retention-days: 1
+          overwrite: true
 
   release:
     needs: [setup, build]
@@ -159,6 +181,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: $ARTIFACT_DIR
+          pattern: *_${{ needs.setup.outputs.version }}*
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -167,9 +191,15 @@ jobs:
           name: NemoMark Desktop ${{ needs.setup.outputs.version }}
           body: |
             ### Version ${{ needs.setup.outputs.version }}
-            - **Windows**: x64 & ARM64
-            - **macOS**: Intel & Apple Silicon
-            - **Linux**: x64 & ARM64
+            **Platform Support:**
+            - Windows (x64/ARM64)
+            - macOS (Intel/Apple Silicon)
+            - Linux (x64/ARM64)
+            
+            **Build Details:**
+            - Built with Python 3.11
+            - Miniconda ${{ env.CONDA_VERSION }}
+            - Nuitka compiled
           draft: false
           prerelease: false
           files: |
